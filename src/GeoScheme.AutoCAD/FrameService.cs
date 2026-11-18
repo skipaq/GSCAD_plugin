@@ -125,8 +125,11 @@ namespace GeoScheme.AutoCAD
                 SaveBlockToDxf(db, blockId, path);
                 EraseBlock(db, blockId);
 
-                Application.DocumentManager.MdiActiveDocument?
-                    .Editor.WriteMessage("\nРамка изменена.");
+                var doc = Application.DocumentManager.MdiActiveDocument;
+                doc?.Editor.WriteMessage("\nРамка изменена.");
+
+                // Возвращаемся в окно выбора рамок.
+                doc?.SendStringToExecute("GSFRAME ", true, false, false);
             }
             catch (System.Exception ex)
             {

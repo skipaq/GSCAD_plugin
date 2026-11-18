@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace GeoScheme.AutoCAD
@@ -226,29 +227,44 @@ namespace GeoScheme.AutoCAD
                     }
                 };
 
-                based.Click += (s, e) => CopyFrame("Создать на базе данной");
+                FrameSelection result = null;
+
+                based.Click += (s, e) =>
+                {
+                    var created = CopyFrame("Создать на базе данной");
+                    if (created == null)
+                        return;
+
+                    // Сразу открываем редактор новой рамки.
+                    result = new FrameSelection { Action = FrameSelection.Edit, Frame = created };
+                    form.Close();
+                };
+
                 copy.Click += (s, e) => CopyFrame("Копировать");
 
-                void CopyFrame(string title)
+                FrameLibrary.FrameInfo CopyFrame(string title)
                 {
                     var frame = Current();
                     if (frame == null)
-                        return;
+                        return null;
 
                     var name = NamePrompt.Ask(title, "Имя новой рамки:", frame.Name + "_копия");
                     if (name == null)
-                        return;
+                        return null;
 
                     if (!FrameLibrary.Copy(frame, name, out var error))
                     {
                         MessageBox.Show("Не удалось скопировать: " + error, "Ошибка");
-                        return;
+                        return null;
                     }
 
                     frames.Clear();
                     frames.AddRange(FrameLibrary.Load());
                     Refresh();
                     SelectByName(name);
+
+                    return frames.FirstOrDefault(f =>
+                        string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
                 }
 
                 rename.Click += (s, e) =>
@@ -294,8 +310,6 @@ namespace GeoScheme.AutoCAD
                     Refresh();
                     UpdateButtons();
                 };
-
-                FrameSelection result = null;
 
                 var insert = new Button
                 {
