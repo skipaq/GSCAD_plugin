@@ -20,8 +20,8 @@ namespace GeoScheme.AutoCAD
             public double TextHeight;
             public readonly List<(double x1, double y1, double x2, double y2)> Segments =
                 new List<(double, double, double, double)>();
-            public readonly List<(double x, double y, double h, double rot, string text)> Texts =
-                new List<(double, double, double, double, string)>();
+            public readonly List<(double x, double y, double h, double rot, string text, string font)> Texts =
+                new List<(double, double, double, double, string, string)>();
         }
 
         public static string BuiltInFolder
@@ -169,19 +169,21 @@ namespace GeoScheme.AutoCAD
 
                     case DBText text:
                         heights.Add(text.Height * ScaleOf(transform));
-                        AddText(info, transform, text.Position, text.Height, text.Rotation, text.TextString);
+                        AddText(info, transform, text.Position, text.Height, text.Rotation,
+                            text.TextString, FontOf(tr, text.TextStyleId));
                         break;
 
                     case MText mtext:
                         heights.Add(mtext.TextHeight * ScaleOf(transform));
-                        AddText(info, transform, mtext.Location, mtext.TextHeight, mtext.Rotation, mtext.Contents);
+                        AddText(info, transform, mtext.Location, mtext.TextHeight, mtext.Rotation,
+                            mtext.Contents, FontOf(tr, mtext.TextStyleId));
                         break;
                 }
             }
         }
 
         private static void AddText(FrameInfo info, Matrix3d transform, Point3d position,
-            double height, double rotation, string text)
+            double height, double rotation, string text, string font)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return;
@@ -189,8 +191,31 @@ namespace GeoScheme.AutoCAD
             var point = position.TransformBy(transform);
             var angle = rotation + AngleOf(transform);
 
-            info.Texts.Add((point.X, point.Y, height * ScaleOf(transform), angle,
-                text.Replace("\\P", " ").Replace("\\p", " ").Trim()));
+            info.Texts.Add((point.X, point.Y, height * ScaleOf(transform), angle, text, font));
+        }
+
+        /// <summary>Имя шрифта из текстового стиля (только TTF; SHX не отрисовать).</summary>
+        private static string FontOf(Transaction tr, ObjectId styleId)
+        {
+            try
+            {
+                var style = tr.GetObject(styleId, OpenMode.ForRead) as TextStyleTableRecord;
+                if (style == null)
+                    return null;
+
+                var file = style.FileName;
+
+                if (string.IsNullOrWhiteSpace(file))
+                    return null;
+
+                return file.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)
+                    ? Path.GetFileNameWithoutExtension(file)
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static double AngleOf(Matrix3d transform)
