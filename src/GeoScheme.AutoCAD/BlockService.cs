@@ -13,12 +13,10 @@ namespace GeoScheme.AutoCAD
     {
         public static void Insert(Editor ed, Database db, FrameLibrary.FrameInfo block)
         {
-            var target = NearestTextHeight(db, ed);
-
-            if (target <= 0)
-                target = DimensionService.AxisTextHeight(db);
-
-            var scale = block.TextHeight > 0 && target > 0 ? target / block.TextHeight : 1.0;
+            var defaultHeight = DimensionService.AxisTextHeight(db);
+            var previewScale = block.TextHeight > 0 && defaultHeight > 0
+                ? defaultHeight / block.TextHeight
+                : 1.0;
 
             var name = "GS_BLOCK_" + Guid.NewGuid().ToString("N").Substring(0, 8);
             ObjectId blockId;
@@ -63,7 +61,7 @@ namespace GeoScheme.AutoCAD
 
                 var preview = new BlockReference(Point3d.Origin, blockId)
                 {
-                    ScaleFactors = new Scale3d(scale)
+                    ScaleFactors = new Scale3d(previewScale)
                 };
 
                 var jig = new BlockJig(preview);
@@ -72,10 +70,18 @@ namespace GeoScheme.AutoCAD
                 if (drag.Status != PromptStatus.OK)
                     return;
 
+                var point = jig.Position;
+                var target = NearestTextHeight(db, point);
+
+                if (target <= 0)
+                    target = defaultHeight;
+
+                var scale = block.TextHeight > 0 && target > 0 ? target / block.TextHeight : 1.0;
+
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
                     var space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
-                    var reference = new BlockReference(jig.Position, blockId)
+                    var reference = new BlockReference(point, blockId)
                     {
                         ScaleFactors = new Scale3d(scale)
                     };
@@ -95,13 +101,8 @@ namespace GeoScheme.AutoCAD
         }
 
         /// <summary>Высота ближайшего к курсору текста.</summary>
-        private static double NearestTextHeight(Database db, Editor ed)
+        private static double NearestTextHeight(Database db, Point3d point)
         {
-            var point = ed.GetPoint("\nУкажите место, рядом с которым стоит образец текста: ");
-
-            if (point.Status != PromptStatus.OK)
-                return 0;
-
             var best = double.MaxValue;
             var height = 0.0;
 
@@ -137,7 +138,7 @@ namespace GeoScheme.AutoCAD
                     if (candidate <= 0)
                         continue;
 
-                    var distance = position.DistanceTo(point.Value);
+                    var distance = position.DistanceTo(point);
 
                     if (distance < best)
                     {

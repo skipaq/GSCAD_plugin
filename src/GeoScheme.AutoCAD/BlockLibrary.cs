@@ -65,25 +65,26 @@ namespace GeoScheme.AutoCAD
 
                 var path = Path.Combine(Folder, Sanitize(name) + ".dxf");
 
-                using (var tr = db.TransactionManager.StartTransaction())
+                using (var target = new Database(true, false))
                 {
                     var ids = new ObjectIdCollection();
 
                     foreach (var id in selection.Value.GetObjectIds())
                         ids.Add(id);
 
-                    var wblock = db.Wblock(ids, Point3d.Origin);
-
-                    try
+                    using (var targetTransaction = target.TransactionManager.StartTransaction())
                     {
-                        wblock.DxfOut(path, 16, false);
-                    }
-                    finally
-                    {
-                        wblock.Dispose();
+                        var model = (BlockTableRecord)targetTransaction.GetObject(
+                            target.CurrentSpaceId, OpenMode.ForWrite);
+
+                        var mapping = new IdMapping();
+                        db.WblockCloneObjects(ids, model.ObjectId, mapping,
+                            DuplicateRecordCloning.Replace, false);
+
+                        targetTransaction.Commit();
                     }
 
-                    tr.Commit();
+                    target.DxfOut(path, 16, false);
                 }
 
                 return true;
