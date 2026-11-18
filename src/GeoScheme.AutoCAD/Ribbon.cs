@@ -41,7 +41,8 @@ namespace GeoScheme.AutoCAD
 
             tab.Panels.Add(MakePanel("Оформление",
                 Button("Рамка", "GSFRAME", "Вставить рамку из библиотеки"),
-                Button("Текстовые блоки", "GSTEXT", "Текстовые блоки (в разработке)"),
+                Button("Текстовые блоки", "GSTEXT", "Библиотека текстовых блоков"),
+                Button("Блоки", "GSBLOCKS", "Библиотека DXF-блоков: легенды, условные обозначения"),
                 Button("Подгон шрифта", "GSFITTEXT", "Подогнать высоту текста под штамп рамки")));
 
             tab.Panels.Add(MakePanel("Вывод",

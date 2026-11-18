@@ -32,12 +32,19 @@ namespace GeoScheme.AutoCAD
                 if (polarOn)
                     Application.SetSystemVariable("AUTOSNAP", autosnapValue & ~1);
 
+                // Переводы строк — в формат МТекста, привязка по левому верхнему углу,
+                // чтобы строки шли как в исходнике, а не центрировались.
+                var content = (block.Text ?? string.Empty)
+                    .Replace("\r\n", "\n")
+                    .Replace("\r", "\n")
+                    .Replace("\n", "\\P");
+
                 var mtext = new MText
                 {
-                    Contents = block.Text,
+                    Contents = content,
                     Location = Point3d.Origin,
                     TextHeight = height,
-                    Attachment = AttachmentPoint.MiddleCenter,
+                    Attachment = AttachmentPoint.TopLeft,
                     Width = 0
                 };
 

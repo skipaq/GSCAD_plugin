@@ -521,6 +521,52 @@ namespace GeoScheme.AutoCAD
             }
         }
 
+        [CommandMethod("GSBLOCKS", CommandFlags.Modal)]
+        public static void Blocks()
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            if (doc == null)
+                return;
+
+            try
+            {
+                while (true)
+                {
+                    var blocks = BlockLibrary.Load();
+                    var choice = BlockDialog.Ask(blocks);
+
+                    if (choice == null)
+                        return;
+
+                    if (choice.Action == BlockSelection.Save)
+                    {
+                        var name = NamePrompt.Ask("Сохранить блок", "Имя блока:", "Блок " + (blocks.Count + 1));
+                        if (name == null)
+                            continue;
+
+                        if (!BlockLibrary.SaveFromSelection(doc.Editor, doc.Database, name, out var error))
+                        {
+                            if (!string.IsNullOrEmpty(error) && error != "Отменено.")
+                                doc.Editor.WriteMessage("\nНе удалось сохранить блок: {0}", error);
+                        }
+                        else
+                        {
+                            doc.Editor.WriteMessage("\nБлок «{0}» сохранён в библиотеку.", name);
+                        }
+
+                        continue;
+                    }
+
+                    BlockService.Insert(doc.Editor, doc.Database, choice.Block);
+                    return;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Report(ex);
+            }
+        }
+
         [CommandMethod("GSFRAMEEXPLODE", CommandFlags.Modal)]
         public static void FrameExplode()
         {
