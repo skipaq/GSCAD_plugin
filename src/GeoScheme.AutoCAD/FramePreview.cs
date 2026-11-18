@@ -197,7 +197,7 @@ namespace GeoScheme.AutoCAD
                 return string.Empty;
 
             var result = MTextCode.Replace(text, string.Empty);
-            result = result.Replace("\\P", " ").Replace("\\p", " ");
+            result = result.Replace("\\P", "\n").Replace("\\p", "\n");
             result = result.Replace("\\~", " ");
             result = result.Replace("{", string.Empty).Replace("}", string.Empty);
             result = result.Replace("%%d", "°").Replace("%%D", "°");

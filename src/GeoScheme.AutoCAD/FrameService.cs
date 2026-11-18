@@ -91,26 +91,24 @@ namespace GeoScheme.AutoCAD
             _editBlock = blockId;
             _editPath = frame.Path;
             _editDb = db;
-            _editStage = 0;
 
-            Application.DocumentManager.DocumentActivated += OnDocumentActivated;
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            doc.CommandEnded += OnBlockEditorClosed;
 
             ed.Command("_.BEDIT", name);
         }
 
-        private static void OnDocumentActivated(object sender,
-            Autodesk.AutoCAD.ApplicationServices.DocumentCollectionEventArgs e)
+        private static void OnBlockEditorClosed(object sender,
+            Autodesk.AutoCAD.ApplicationServices.CommandEventArgs e)
         {
             if (_editBlock == ObjectId.Null)
                 return;
 
-            _editStage++;
-
-            // Первое переключение — вход в редактор блоков, второе — возврат в чертёж.
-            if (_editStage < 2)
+            if (!e.GlobalCommandName.StartsWith("BCLOSE", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            Application.DocumentManager.DocumentActivated -= OnDocumentActivated;
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            doc.CommandEnded -= OnBlockEditorClosed;
 
             var db = _editDb;
             var blockId = _editBlock;
@@ -125,16 +123,14 @@ namespace GeoScheme.AutoCAD
                 SaveBlockToDxf(db, blockId, path);
                 EraseBlock(db, blockId);
 
-                var doc = Application.DocumentManager.MdiActiveDocument;
-                doc?.Editor.WriteMessage("\nРамка изменена.");
+                doc.Editor.WriteMessage("\nРамка изменена.");
 
                 // Возвращаемся в окно выбора рамок.
-                doc?.SendStringToExecute("GSFRAME ", true, false, false);
+                doc.SendStringToExecute("GSFRAME ", true, false, false);
             }
             catch (System.Exception ex)
             {
-                Application.DocumentManager.MdiActiveDocument?
-                    .Editor.WriteMessage("\nНе удалось сохранить рамку: {0}", ex.Message);
+                doc.Editor.WriteMessage("\nНе удалось сохранить рамку: {0}", ex.Message);
             }
         }
 
