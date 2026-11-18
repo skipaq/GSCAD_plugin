@@ -1,17 +1,78 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace GeoScheme.AutoCAD
 {
-    /// <summary>Выбор рамки с миниатюрой.</summary>
+    /// <summary>Простой ввод имени.</summary>
+    public static class NamePrompt
+    {
+        public static string Ask(string title, string label, string value)
+        {
+            using (var form = new Form())
+            {
+                form.Text = title;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ClientSize = new Size(360, 120);
+
+                var caption = new Label { Text = label, Location = new Point(15, 12), Width = 330, Height = 18 };
+
+                var box = new TextBox { Text = value, Location = new Point(15, 35), Width = 330 };
+
+                var ok = new Button
+                {
+                    Text = "ОК",
+                    DialogResult = DialogResult.OK,
+                    Location = new Point(185, 75),
+                    Width = 75
+                };
+
+                var cancel = new Button
+                {
+                    Text = "Отмена",
+                    DialogResult = DialogResult.Cancel,
+                    Location = new Point(270, 75),
+                    Width = 75
+                };
+
+                form.Controls.Add(caption);
+                form.Controls.Add(box);
+                form.Controls.Add(ok);
+                form.Controls.Add(cancel);
+                form.AcceptButton = ok;
+                form.CancelButton = cancel;
+
+                if (form.ShowDialog() != DialogResult.OK)
+                    return null;
+
+                var result = box.Text.Trim();
+                return result.Length == 0 ? null : result;
+            }
+        }
+    }
+
+    /// <summary>Что выбрал пользователь в окне рамок.</summary>
+    public sealed class FrameSelection
+    {
+        public const int Insert = 1;
+        public const int Edit = 2;
+
+        public int Action;
+        public FrameLibrary.FrameInfo Frame;
+    }
+
+    /// <summary>Окно выбора рамки: список, превью с текстом и зумом, управление библиотекой.</summary>
     public static class FrameDialog
     {
-        public static FrameLibrary.FrameInfo Ask(List<FrameLibrary.FrameInfo> frames)
+        public static FrameSelection Ask(List<FrameLibrary.FrameInfo> frames)
         {
-            if (frames == null || frames.Count == 0)
-                return null;
+            if (frames == null)
+                frames = new List<FrameLibrary.FrameInfo>();
 
             using (var form = new Form())
             {
@@ -20,150 +81,274 @@ namespace GeoScheme.AutoCAD
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.MinimizeBox = false;
                 form.MaximizeBox = false;
-                form.ClientSize = new Size(620, 430);
+                form.ClientSize = new Size(760, 470);
 
                 var list = new ListBox
                 {
                     Location = new Point(15, 15),
-                    Size = new Size(220, 340),
+                    Size = new Size(230, 380),
                     IntegralHeight = false
                 };
 
-                foreach (var frame in frames)
-                    list.Items.Add(frame.Name);
-
-                if (list.Items.Count > 0)
-                    list.SelectedIndex = 0;
-
                 var preview = new Panel
                 {
-                    Location = new Point(250, 15),
-                    Size = new Size(350, 340),
+                    Location = new Point(260, 15),
+                    Size = new Size(480, 380),
                     BorderStyle = BorderStyle.FixedSingle,
                     BackColor = Color.FromArgb(43, 47, 54)
                 };
 
                 var sizeLabel = new Label
                 {
-                    Location = new Point(250, 362),
-                    Width = 350,
+                    Location = new Point(260, 400),
+                    Width = 480,
                     Height = 18,
                     ForeColor = Color.Gray
                 };
 
+                var zoom = 1.0;
+
+                void Refresh()
+                {
+                    list.Items.Clear();
+
+                    foreach (var frame in frames)
+                        list.Items.Add(frame.Name);
+
+                    if (list.Items.Count > 0)
+                        list.SelectedIndex = 0;
+
+                    preview.Invalidate();
+                }
+
+                FrameLibrary.FrameInfo Current() =>
+                    list.SelectedIndex >= 0 && list.SelectedIndex < frames.Count
+                        ? frames[list.SelectedIndex]
+                        : null;
+
                 preview.Paint += (s, e) =>
                 {
-                    if (list.SelectedIndex < 0)
+                    var frame = Current();
+                    if (frame == null)
                         return;
 
-                    var frame = frames[list.SelectedIndex];
-                    DrawFrame(e.Graphics, preview.ClientSize, frame);
+                    FramePreview.Draw(e.Graphics, preview.ClientSize, frame, zoom);
+                };
+
+                preview.MouseWheel += (s, e) =>
+                {
+                    zoom *= e.Delta > 0 ? 1.15 : 1 / 1.15;
+                    zoom = Math.Max(0.2, Math.Min(20, zoom));
+                    preview.Invalidate();
                 };
 
                 list.SelectedIndexChanged += (s, e) =>
                 {
+                    var frame = Current();
+                    sizeLabel.Text = frame == null ? string.Empty : $"{frame.Width:F0} × {frame.Height:F0}";
+                    zoom = 1.0;
                     preview.Invalidate();
-
-                    if (list.SelectedIndex >= 0)
-                    {
-                        var frame = frames[list.SelectedIndex];
-                        sizeLabel.Text = $"{frame.Width:F0} × {frame.Height:F0}";
-                    }
                 };
 
-                var add = new Button
+                var based = new Button
                 {
-                    Text = "＋ Добавить свою рамку",
-                    Location = new Point(15, 362),
-                    Width = 220,
-                    Height = 30
+                    Text = "Создать на базе данной…",
+                    Location = new Point(15, 405),
+                    Width = 230,
+                    Height = 28,
+                    Enabled = false
                 };
 
-                add.Click += (s, e) =>
+                var load = new Button
+                {
+                    Text = "Загрузить рамку из DXF",
+                    Location = new Point(15, 438),
+                    Width = 230,
+                    Height = 28
+                };
+
+                var copy = new Button { Text = "Копировать", Location = new Point(545, 15), Width = 195, Height = 28 };
+                var rename = new Button { Text = "Переименовать", Location = new Point(545, 50), Width = 195, Height = 28 };
+                var edit = new Button { Text = "Редактировать", Location = new Point(545, 85), Width = 195, Height = 28 };
+                var delete = new Button { Text = "Удалить", Location = new Point(545, 120), Width = 195, Height = 28 };
+
+                foreach (var button in new[] { copy, rename, edit, delete })
+                    button.Enabled = false;
+
+                void UpdateButtons()
+                {
+                    var has = Current() != null;
+
+                    foreach (var button in new[] { copy, rename, edit, delete })
+                        button.Enabled = has;
+
+                    based.Enabled = has;
+                }
+
+                list.SelectedIndexChanged += (s, e) => UpdateButtons();
+
+                load.Click += (s, e) =>
                 {
                     using (var dlg = new OpenFileDialog())
                     {
                         dlg.Filter = "DXF (*.dxf)|*.dxf";
-                        dlg.Title = "Своя рамка";
+                        dlg.Title = "Загрузить рамку";
 
                         if (dlg.ShowDialog() != DialogResult.OK)
                             return;
 
                         if (!FrameLibrary.AddCustom(dlg.FileName, out var error))
                         {
-                            MessageBox.Show("Не удалось добавить рамку: " + error, "Ошибка");
+                            MessageBox.Show("Не удалось добавить: " + error, "Ошибка");
                             return;
                         }
 
-                        var info = FrameLibrary.Read(dlg.FileName);
-                        if (info == null)
-                        {
-                            MessageBox.Show("Не удалось прочитать DXF.", "Ошибка");
-                            return;
-                        }
-
-                        frames.Add(info);
-                        list.Items.Add(info.Name);
-                        list.SelectedIndex = list.Items.Count - 1;
+                        frames.Clear();
+                        frames.AddRange(FrameLibrary.Load());
+                        Refresh();
+                        UpdateButtons();
                     }
                 };
+
+                based.Click += (s, e) => CopyFrame("Создать на базе данной");
+                copy.Click += (s, e) => CopyFrame("Копировать");
+
+                void CopyFrame(string title)
+                {
+                    var frame = Current();
+                    if (frame == null)
+                        return;
+
+                    var name = NamePrompt.Ask(title, "Имя новой рамки:", frame.Name + "_копия");
+                    if (name == null)
+                        return;
+
+                    if (!FrameLibrary.Copy(frame, name, out var error))
+                    {
+                        MessageBox.Show("Не удалось скопировать: " + error, "Ошибка");
+                        return;
+                    }
+
+                    frames.Clear();
+                    frames.AddRange(FrameLibrary.Load());
+                    Refresh();
+                    SelectByName(name);
+                }
+
+                rename.Click += (s, e) =>
+                {
+                    var frame = Current();
+                    if (frame == null)
+                        return;
+
+                    var name = NamePrompt.Ask("Переименовать", "Новое имя рамки:", frame.Name);
+                    if (name == null || name == frame.Name)
+                        return;
+
+                    if (!FrameLibrary.Rename(frame, name, out var error))
+                    {
+                        MessageBox.Show("Не удалось переименовать: " + error, "Ошибка");
+                        return;
+                    }
+
+                    frames.Clear();
+                    frames.AddRange(FrameLibrary.Load());
+                    Refresh();
+                    SelectByName(name);
+                };
+
+                delete.Click += (s, e) =>
+                {
+                    var frame = Current();
+                    if (frame == null)
+                        return;
+
+                    if (MessageBox.Show($"Удалить рамку «{frame.Name}»?", "Удаление",
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                        return;
+
+                    if (!FrameLibrary.Delete(frame, out var error))
+                    {
+                        MessageBox.Show("Не удалось удалить: " + error, "Ошибка");
+                        return;
+                    }
+
+                    frames.Clear();
+                    frames.AddRange(FrameLibrary.Load());
+                    Refresh();
+                    UpdateButtons();
+                };
+
+                FrameSelection result = null;
 
                 var insert = new Button
                 {
                     Text = "Вставить",
                     DialogResult = DialogResult.OK,
-                    Location = new Point(440, 390),
-                    Width = 80
+                    Location = new Point(545, 405),
+                    Width = 95,
+                    Height = 28
                 };
 
-                var cancel = new Button
+                var cancelButton = new Button
                 {
                     Text = "Отмена",
                     DialogResult = DialogResult.Cancel,
-                    Location = new Point(525, 390),
-                    Width = 80
+                    Location = new Point(660, 405),
+                    Width = 80,
+                    Height = 28
+                };
+
+                edit.Click += (s, e) =>
+                {
+                    var frame = Current();
+                    if (frame == null)
+                        return;
+
+                    result = new FrameSelection { Action = FrameSelection.Edit, Frame = frame };
+                    form.Close();
+                };
+
+                insert.Click += (s, e) =>
+                {
+                    var frame = Current();
+                    if (frame == null)
+                        return;
+
+                    result = new FrameSelection { Action = FrameSelection.Insert, Frame = frame };
+                    form.Close();
                 };
 
                 form.Controls.Add(list);
                 form.Controls.Add(preview);
                 form.Controls.Add(sizeLabel);
-                form.Controls.Add(add);
+                form.Controls.Add(based);
+                form.Controls.Add(load);
+                form.Controls.Add(copy);
+                form.Controls.Add(rename);
+                form.Controls.Add(edit);
+                form.Controls.Add(delete);
                 form.Controls.Add(insert);
-                form.Controls.Add(cancel);
+                form.Controls.Add(cancelButton);
                 form.AcceptButton = insert;
-                form.CancelButton = cancel;
+                form.CancelButton = cancelButton;
 
-                if (form.ShowDialog() != DialogResult.OK || list.SelectedIndex < 0)
-                    return null;
-
-                return frames[list.SelectedIndex];
-            }
-        }
-
-        private static void DrawFrame(Graphics g, Size size, FrameLibrary.FrameInfo frame)
-        {
-            if (frame.Segments.Count == 0 || frame.Width <= 0 || frame.Height <= 0)
-                return;
-
-            const float margin = 12;
-            var scale = Math.Min(
-                (size.Width - 2 * margin) / (float)frame.Width,
-                (size.Height - 2 * margin) / (float)frame.Height);
-
-            var centerX = size.Width / 2f;
-            var centerY = size.Height / 2f;
-
-            using (var pen = new Pen(Color.FromArgb(230, 230, 230), 1f))
-            {
-                foreach (var segment in frame.Segments)
+                void SelectByName(string name)
                 {
-                    var x1 = centerX + (float)(segment.x1 - frame.CenterX) * scale;
-                    var y1 = centerY - (float)(segment.y1 - frame.CenterY) * scale;
-                    var x2 = centerX + (float)(segment.x2 - frame.CenterX) * scale;
-                    var y2 = centerY - (float)(segment.y2 - frame.CenterY) * scale;
-
-                    g.DrawLine(pen, x1, y1, x2, y2);
+                    for (var i = 0; i < list.Items.Count; i++)
+                        if (string.Equals(list.Items[i]?.ToString(), name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            list.SelectedIndex = i;
+                            return;
+                        }
                 }
+
+                Refresh();
+                UpdateButtons();
+
+                form.ShowDialog();
+
+                return result;
             }
         }
     }

@@ -19,6 +19,11 @@ namespace GeoScheme.AutoCAD
         private static ObjectId _pending;
         private static bool _hooked;
 
+        private static ObjectId _editBlock = ObjectId.Null;
+        private static string _editPath;
+        private static Database _editDb;
+        private static int _editStage;
+
         public static void Insert(Editor ed, Database db, FrameLibrary.FrameInfo frame)
         {
             var scale = GetScale(db, frame);
@@ -59,6 +64,113 @@ namespace GeoScheme.AutoCAD
             }
 
             ed.WriteMessage("\nРамка вставлена (масштаб {0:F4}) блоком. Разбить на объекты — GSFRAMEEXPLODE.", scale);
+        }
+
+        /// <summary>
+        /// Редактирование рамки: вставляем блок, открываем редактор блоков,
+        /// после закрытия сохраняем обратно в DXF.
+        /// </summary>
+        public static void Edit(Editor ed, Database db, FrameLibrary.FrameInfo frame)
+        {
+            var blockId = CreateBlock(db, frame, out var error);
+
+            if (blockId == ObjectId.Null)
+            {
+                ed.WriteMessage("\nНе удалось открыть рамку: {0}", error);
+                return;
+            }
+
+            string name;
+
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                name = ((BlockTableRecord)tr.GetObject(blockId, OpenMode.ForRead)).Name;
+                tr.Commit();
+            }
+
+            _editBlock = blockId;
+            _editPath = frame.Path;
+            _editDb = db;
+            _editStage = 0;
+
+            Application.DocumentManager.DocumentActivated += OnDocumentActivated;
+
+            ed.Command("_.BEDIT", name);
+        }
+
+        private static void OnDocumentActivated(object sender,
+            Autodesk.AutoCAD.ApplicationServices.DocumentCollectionEventArgs e)
+        {
+            if (_editBlock == ObjectId.Null)
+                return;
+
+            _editStage++;
+
+            // Первое переключение — вход в редактор блоков, второе — возврат в чертёж.
+            if (_editStage < 2)
+                return;
+
+            Application.DocumentManager.DocumentActivated -= OnDocumentActivated;
+
+            var db = _editDb;
+            var blockId = _editBlock;
+            var path = _editPath;
+
+            _editBlock = ObjectId.Null;
+            _editPath = null;
+            _editDb = null;
+
+            try
+            {
+                SaveBlockToDxf(db, blockId, path);
+                EraseBlock(db, blockId);
+
+                Application.DocumentManager.MdiActiveDocument?
+                    .Editor.WriteMessage("\nРамка изменена.");
+            }
+            catch (System.Exception ex)
+            {
+                Application.DocumentManager.MdiActiveDocument?
+                    .Editor.WriteMessage("\nНе удалось сохранить рамку: {0}", ex.Message);
+            }
+        }
+
+        private static void SaveBlockToDxf(Database db, ObjectId blockId, string path)
+        {
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                var definition = (BlockTableRecord)tr.GetObject(blockId, OpenMode.ForRead);
+                var ids = new ObjectIdCollection();
+
+                foreach (var id in definition)
+                    ids.Add(id);
+
+                var wblock = db.Wblock(ids, Point3d.Origin);
+
+                try
+                {
+                    wblock.DxfOut(path, 16, false);
+                }
+                finally
+                {
+                    wblock.Dispose();
+                }
+
+                tr.Commit();
+            }
+        }
+
+        private static void EraseBlock(Database db, ObjectId blockId)
+        {
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                var definition = tr.GetObject(blockId, OpenMode.ForWrite, false) as BlockTableRecord;
+
+                if (definition != null && definition.GetBlockReferenceIds(true, false).Count == 0)
+                    definition.Erase();
+
+                tr.Commit();
+            }
         }
 
         private static double GetScale(Database db, FrameLibrary.FrameInfo frame)

@@ -20,6 +20,8 @@ namespace GeoScheme.AutoCAD
             public double TextHeight;
             public readonly List<(double x1, double y1, double x2, double y2)> Segments =
                 new List<(double, double, double, double)>();
+            public readonly List<(double x, double y, double h, double rot, string text)> Texts =
+                new List<(double, double, double, double, string)>();
         }
 
         public static string BuiltInFolder
@@ -167,13 +169,35 @@ namespace GeoScheme.AutoCAD
 
                     case DBText text:
                         heights.Add(text.Height * ScaleOf(transform));
+                        AddText(info, transform, text.Position, text.Height, text.Rotation, text.TextString);
                         break;
 
                     case MText mtext:
                         heights.Add(mtext.TextHeight * ScaleOf(transform));
+                        AddText(info, transform, mtext.Location, mtext.TextHeight, mtext.Rotation, mtext.Contents);
                         break;
                 }
             }
+        }
+
+        private static void AddText(FrameInfo info, Matrix3d transform, Point3d position,
+            double height, double rotation, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            var point = position.TransformBy(transform);
+            var angle = rotation + AngleOf(transform);
+
+            info.Texts.Add((point.X, point.Y, height * ScaleOf(transform), angle,
+                text.Replace("\\P", " ").Replace("\\p", " ").Trim()));
+        }
+
+        private static double AngleOf(Matrix3d transform)
+        {
+            var origin = Point3d.Origin.TransformBy(transform);
+            var unit = new Point3d(1, 0, 0).TransformBy(transform);
+            return Math.Atan2(unit.Y - origin.Y, unit.X - origin.X);
         }
 
         private static void AddSegment(FrameInfo info, Point3d a, Point3d b,
@@ -219,6 +243,74 @@ namespace GeoScheme.AutoCAD
             }
 
             return best > 0 ? best : values[0];
+        }
+
+        public static bool Copy(FrameInfo frame, string newName, out string error)
+        {
+            error = null;
+
+            try
+            {
+                var folder = Path.GetDirectoryName(frame.Path) ?? BuiltInFolder;
+                var target = Path.Combine(folder, Sanitize(newName) + ".dxf");
+
+                if (string.Equals(Path.GetFullPath(target), Path.GetFullPath(frame.Path),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "Имя совпадает с текущим.";
+                    return false;
+                }
+
+                File.Copy(frame.Path, target, true);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public static bool Rename(FrameInfo frame, string newName, out string error)
+        {
+            error = null;
+
+            try
+            {
+                var folder = Path.GetDirectoryName(frame.Path) ?? BuiltInFolder;
+                var target = Path.Combine(folder, Sanitize(newName) + ".dxf");
+                File.Move(frame.Path, target);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public static bool Delete(FrameInfo frame, out string error)
+        {
+            error = null;
+
+            try
+            {
+                File.Delete(frame.Path);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static string Sanitize(string name)
+        {
+            foreach (var ch in Path.GetInvalidFileNameChars())
+                name = name.Replace(ch, '_');
+
+            return name.Trim();
         }
 
         public static bool AddCustom(string path, out string error)

@@ -478,19 +478,29 @@ namespace GeoScheme.AutoCAD
 
             try
             {
-                var frames = FrameLibrary.Load();
-
-                if (frames.Count == 0)
+                while (true)
                 {
-                    doc.Editor.WriteMessage("\nРамки не найдены. Папка: {0}", FrameLibrary.BuiltInFolder);
+                    var frames = FrameLibrary.Load();
+
+                    if (frames.Count == 0)
+                    {
+                        doc.Editor.WriteMessage("\nРамки не найдены. Папка: {0}", FrameLibrary.BuiltInFolder);
+                        return;
+                    }
+
+                    var choice = FrameDialog.Ask(frames);
+                    if (choice == null)
+                        return;
+
+                    if (choice.Action == FrameSelection.Edit)
+                    {
+                        FrameService.Edit(doc.Editor, doc.Database, choice.Frame);
+                        continue;
+                    }
+
+                    FrameService.Insert(doc.Editor, doc.Database, choice.Frame);
                     return;
                 }
-
-                var frame = FrameDialog.Ask(frames);
-                if (frame == null)
-                    return;
-
-                FrameService.Insert(doc.Editor, doc.Database, frame);
             }
             catch (System.Exception ex)
             {
