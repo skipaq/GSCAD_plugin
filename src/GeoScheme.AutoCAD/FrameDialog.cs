@@ -81,32 +81,34 @@ namespace GeoScheme.AutoCAD
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.MinimizeBox = false;
                 form.MaximizeBox = false;
-                form.ClientSize = new Size(760, 470);
+                form.ClientSize = new Size(820, 500);
 
                 var list = new ListBox
                 {
                     Location = new Point(15, 15),
-                    Size = new Size(230, 380),
+                    Size = new Size(230, 370),
                     IntegralHeight = false
                 };
 
                 var preview = new Panel
                 {
                     Location = new Point(260, 15),
-                    Size = new Size(480, 380),
+                    Size = new Size(545, 370),
                     BorderStyle = BorderStyle.FixedSingle,
                     BackColor = Color.FromArgb(43, 47, 54)
                 };
 
                 var sizeLabel = new Label
                 {
-                    Location = new Point(260, 400),
-                    Width = 480,
+                    Location = new Point(260, 390),
+                    Width = 545,
                     Height = 18,
                     ForeColor = Color.Gray
                 };
 
                 var zoom = 1.0;
+                var panX = 0.0;
+                var panY = 0.0;
 
                 void Refresh()
                 {
@@ -132,13 +134,25 @@ namespace GeoScheme.AutoCAD
                     if (frame == null)
                         return;
 
-                    FramePreview.Draw(e.Graphics, preview.ClientSize, frame, zoom);
+                    FramePreview.Draw(e.Graphics, preview.ClientSize, frame, zoom, panX, panY);
                 };
 
                 preview.MouseWheel += (s, e) =>
                 {
-                    zoom *= e.Delta > 0 ? 1.15 : 1 / 1.15;
-                    zoom = Math.Max(0.2, Math.Min(20, zoom));
+                    var factor = e.Delta > 0 ? 1.15 : 1 / 1.15;
+                    var next = Math.Max(0.2, Math.Min(20, zoom * factor));
+                    factor = next / zoom;
+
+                    // Точка под курсором должна остаться на месте.
+                    var mx = e.X;
+                    var my = e.Y;
+
+                    panX = mx - (mx - (preview.ClientSize.Width / 2.0 + panX)) * factor
+                           - preview.ClientSize.Width / 2.0;
+                    panY = my - (my - (preview.ClientSize.Height / 2.0 + panY)) * factor
+                           - preview.ClientSize.Height / 2.0;
+
+                    zoom = next;
                     preview.Invalidate();
                 };
 
@@ -147,13 +161,15 @@ namespace GeoScheme.AutoCAD
                     var frame = Current();
                     sizeLabel.Text = frame == null ? string.Empty : $"{frame.Width:F0} × {frame.Height:F0}";
                     zoom = 1.0;
+                    panX = 0;
+                    panY = 0;
                     preview.Invalidate();
                 };
 
                 var based = new Button
                 {
                     Text = "Создать на базе данной…",
-                    Location = new Point(15, 405),
+                    Location = new Point(15, 395),
                     Width = 230,
                     Height = 28,
                     Enabled = false
@@ -162,15 +178,15 @@ namespace GeoScheme.AutoCAD
                 var load = new Button
                 {
                     Text = "Загрузить рамку из DXF",
-                    Location = new Point(15, 438),
+                    Location = new Point(15, 428),
                     Width = 230,
                     Height = 28
                 };
 
-                var copy = new Button { Text = "Копировать", Location = new Point(545, 15), Width = 195, Height = 28 };
-                var rename = new Button { Text = "Переименовать", Location = new Point(545, 50), Width = 195, Height = 28 };
-                var edit = new Button { Text = "Редактировать", Location = new Point(545, 85), Width = 195, Height = 28 };
-                var delete = new Button { Text = "Удалить", Location = new Point(545, 120), Width = 195, Height = 28 };
+                var copy = new Button { Text = "Копировать", Location = new Point(255, 428), Width = 125, Height = 28 };
+                var rename = new Button { Text = "Переименовать", Location = new Point(385, 428), Width = 135, Height = 28 };
+                var edit = new Button { Text = "Редактировать", Location = new Point(525, 428), Width = 135, Height = 28 };
+                var delete = new Button { Text = "Удалить", Location = new Point(665, 428), Width = 140, Height = 28 };
 
                 foreach (var button in new[] { copy, rename, edit, delete })
                     button.Enabled = false;
@@ -285,8 +301,8 @@ namespace GeoScheme.AutoCAD
                 {
                     Text = "Вставить",
                     DialogResult = DialogResult.OK,
-                    Location = new Point(545, 405),
-                    Width = 95,
+                    Location = new Point(575, 462),
+                    Width = 130,
                     Height = 28
                 };
 
@@ -294,8 +310,8 @@ namespace GeoScheme.AutoCAD
                 {
                     Text = "Отмена",
                     DialogResult = DialogResult.Cancel,
-                    Location = new Point(660, 405),
-                    Width = 80,
+                    Location = new Point(710, 462),
+                    Width = 95,
                     Height = 28
                 };
 

@@ -4,10 +4,11 @@ using System.Drawing.Drawing2D;
 
 namespace GeoScheme.AutoCAD
 {
-    /// <summary>Отрисовка миниатюры рамки: линии и текст, с зумом.</summary>
+    /// <summary>Отрисовка миниатюры рамки: линии и текст, с зумом и сдвигом.</summary>
     public static class FramePreview
     {
-        public static void Draw(Graphics g, Size size, FrameLibrary.FrameInfo frame, double zoom)
+        public static void Draw(Graphics g, Size size, FrameLibrary.FrameInfo frame,
+            double zoom, double panX, double panY)
         {
             if (frame == null || frame.Width <= 0 || frame.Height <= 0)
                 return;
@@ -15,15 +16,20 @@ namespace GeoScheme.AutoCAD
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             const double margin = 14;
-            var scale = Math.Min(
+            var fit = Math.Min(
                 (size.Width - 2 * margin) / frame.Width,
-                (size.Height - 2 * margin) / frame.Height) * zoom;
+                (size.Height - 2 * margin) / frame.Height);
 
-            var centerX = size.Width / 2.0;
-            var centerY = size.Height / 2.0;
+            var scale = fit * zoom;
+
+            var centerX = size.Width / 2.0 + panX;
+            var centerY = size.Height / 2.0 + panY;
 
             double Px(double x) => centerX + (x - frame.CenterX) * scale;
             double Py(double y) => centerY - (y - frame.CenterY) * scale;
+
+            var stateClip = g.Save();
+            g.SetClip(new Rectangle(0, 0, size.Width, size.Height));
 
             using (var pen = new Pen(Color.FromArgb(225, 225, 225), 1f))
             {
@@ -68,6 +74,8 @@ namespace GeoScheme.AutoCAD
                     g.Restore(state);
                 }
             }
+
+            g.Restore(stateClip);
         }
     }
 }
