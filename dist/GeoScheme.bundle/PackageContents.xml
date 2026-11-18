@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0"
+                    AutodeskProduct="AutoCAD"
+                    Name="GeoScheme"
+                    Description="Исполнительные схемы: импорт PDF, калибровка, оси, размеры, факт, рамка, PDF"
+                    AppVersion="0.1.0"
+                    ProductType="Application"
+                    ProductCode="{3E70FB4F-99F6-4E9B-A56D-744B30B720A2}"
+                    UpgradeCode="{2915A67E-72BB-4FB6-8A4A-3E7823295AAD}"
+                    Version="0.1.0"
+                    Author="GeoScheme">
+
+  <CompanyDetails Name="GeoScheme" Url="" Email="" />
+
+  <Components Description="GeoScheme plugin for AutoCAD">
+    <!-- 2021–2024: .NET Framework 4.8. Для 2025+ нужна отдельная сборка под .NET 8. -->
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" SeriesMax="R24.9" />
+    <ComponentEntry AppName="GeoScheme"
+                    Version="0.1.0"
+                    ModuleName="./Contents/GeoScheme.AutoCAD.dll"
+                    AppType=".NET" />
+  </Components>
+
+</ApplicationPackage>
