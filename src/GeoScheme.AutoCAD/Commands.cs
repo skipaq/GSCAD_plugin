@@ -556,7 +556,27 @@ namespace GeoScheme.AutoCAD
         }
 
         [CommandMethod("GSTEXT", CommandFlags.Modal)]
-        public static void TextBlocks() => Stub("GSTEXT", "Текстовые блоки.");
+        public static void TextBlocks()
+        {
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            if (doc == null)
+                return;
+
+            try
+            {
+                var blocks = TextBlockLibrary.Load();
+                var choice = TextBlockDialog.Ask(blocks, TextBlockLibrary.Save);
+
+                if (choice == null)
+                    return;
+
+                TextBlockService.Insert(doc.Editor, doc.Database, choice);
+            }
+            catch (System.Exception ex)
+            {
+                Report(ex);
+            }
+        }
 
         [CommandMethod("GSSTAMP", CommandFlags.Modal)]
         public static void Stamp() => Stub("GSSTAMP", "Штамп.");
