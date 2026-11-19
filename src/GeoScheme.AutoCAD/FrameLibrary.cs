@@ -338,6 +338,67 @@ namespace GeoScheme.AutoCAD
             return name.Trim();
         }
 
+        /// <summary>Сохранить существующий блок чертежа как рамку в библиотеку.</summary>
+        public static bool SaveFromBlock(Database db, ObjectId referenceId, string name, out string error)
+        {
+            error = null;
+
+            try
+            {
+                Directory.CreateDirectory(BuiltInFolder);
+
+                var path = Path.Combine(BuiltInFolder, Sanitize(name) + ".dxf");
+
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    var reference = tr.GetObject(referenceId, OpenMode.ForRead) as BlockReference;
+                    if (reference == null)
+                    {
+                        error = "Это не блок.";
+                        return false;
+                    }
+
+                    var definition = (BlockTableRecord)tr.GetObject(reference.BlockTableRecord, OpenMode.ForRead);
+                    var ids = new ObjectIdCollection();
+
+                    foreach (var id in definition)
+                        ids.Add(id);
+
+                    if (ids.Count == 0)
+                    {
+                        error = "Блок пустой.";
+                        return false;
+                    }
+
+                    using (var target = new Database(true, false))
+                    {
+                        using (var targetTransaction = target.TransactionManager.StartTransaction())
+                        {
+                            var model = (BlockTableRecord)targetTransaction.GetObject(
+                                target.CurrentSpaceId, OpenMode.ForWrite);
+
+                            var mapping = new IdMapping();
+                            db.WblockCloneObjects(ids, model.ObjectId, mapping,
+                                DuplicateRecordCloning.Replace, false);
+
+                            targetTransaction.Commit();
+                        }
+
+                        target.DxfOut(path, 16, false);
+                    }
+
+                    tr.Commit();
+                }
+
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         public static bool AddCustom(string path, out string error)
         {
             error = null;

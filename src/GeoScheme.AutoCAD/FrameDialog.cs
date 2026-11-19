@@ -62,6 +62,7 @@ namespace GeoScheme.AutoCAD
     {
         public const int Insert = 1;
         public const int Edit = 2;
+        public const int SelectBlock = 3;
 
         public int Action;
         public FrameLibrary.FrameInfo Frame;
@@ -180,6 +181,14 @@ namespace GeoScheme.AutoCAD
                 {
                     Text = "Загрузить рамку из DXF",
                     Location = new Point(15, 428),
+                    Width = 230,
+                    Height = 28
+                };
+
+                var pickBlock = new Button
+                {
+                    Text = "Выбрать блок на чертеже",
+                    Location = new Point(15, 462),
                     Width = 230,
                     Height = 28
                 };
@@ -311,6 +320,12 @@ namespace GeoScheme.AutoCAD
                     UpdateButtons();
                 };
 
+                pickBlock.Click += (s, e) =>
+                {
+                    result = new FrameSelection { Action = FrameSelection.SelectBlock };
+                    form.Close();
+                };
+
                 var insert = new Button
                 {
                     Text = "Вставить",
@@ -354,6 +369,7 @@ namespace GeoScheme.AutoCAD
                 form.Controls.Add(sizeLabel);
                 form.Controls.Add(based);
                 form.Controls.Add(load);
+                form.Controls.Add(pickBlock);
                 form.Controls.Add(copy);
                 form.Controls.Add(rename);
                 form.Controls.Add(edit);

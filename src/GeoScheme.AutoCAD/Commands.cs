@@ -478,25 +478,49 @@ namespace GeoScheme.AutoCAD
 
             try
             {
-                var frames = FrameLibrary.Load();
-
-                if (frames.Count == 0)
+                while (true)
                 {
-                    doc.Editor.WriteMessage("\nРамки не найдены. Папка: {0}", FrameLibrary.BuiltInFolder);
+                    var frames = FrameLibrary.Load();
+                    var choice = FrameDialog.Ask(frames);
+
+                    if (choice == null)
+                        return;
+
+                    if (choice.Action == FrameSelection.SelectBlock)
+                    {
+                        var options = new PromptEntityOptions("\nВыберите блок на чертеже: ");
+                        options.SetRejectMessage("\nНужен блок.");
+                        options.AddAllowedClass(typeof(BlockReference), false);
+
+                        var pick = doc.Editor.GetEntity(options);
+                        if (pick.Status != PromptStatus.OK)
+                            continue;
+
+                        var name = NamePrompt.Ask("Рамка из блока", "Имя рамки:", "Рамка");
+                        if (name == null)
+                            continue;
+
+                        if (FrameLibrary.SaveFromBlock(doc.Database, pick.ObjectId, name, out var error))
+                        {
+                            doc.Editor.WriteMessage("\nРамка «{0}» добавлена в библиотеку.", name);
+                        }
+                        else
+                        {
+                            doc.Editor.WriteMessage("\nНе удалось добавить рамку: {0}", error);
+                        }
+
+                        continue;
+                    }
+
+                    if (choice.Action == FrameSelection.Edit)
+                    {
+                        FrameService.Edit(doc.Editor, doc.Database, choice.Frame);
+                        return;
+                    }
+
+                    FrameService.Insert(doc.Editor, doc.Database, choice.Frame);
                     return;
                 }
-
-                var choice = FrameDialog.Ask(frames);
-                if (choice == null)
-                    return;
-
-                if (choice.Action == FrameSelection.Edit)
-                {
-                    FrameService.Edit(doc.Editor, doc.Database, choice.Frame);
-                    return;
-                }
-
-                FrameService.Insert(doc.Editor, doc.Database, choice.Frame);
             }
             catch (System.Exception ex)
             {
@@ -601,28 +625,6 @@ namespace GeoScheme.AutoCAD
             }
         }
 
-        [CommandMethod("GSTEXT", CommandFlags.Modal)]
-        public static void TextBlocks()
-        {
-            var doc = Application.DocumentManager.MdiActiveDocument;
-            if (doc == null)
-                return;
-
-            try
-            {
-                var blocks = TextBlockLibrary.Load();
-                var choice = TextBlockDialog.Ask(blocks, TextBlockLibrary.Save);
-
-                if (choice == null)
-                    return;
-
-                TextBlockService.Insert(doc.Editor, doc.Database, choice);
-            }
-            catch (System.Exception ex)
-            {
-                Report(ex);
-            }
-        }
 
         [CommandMethod("GSSTAMP", CommandFlags.Modal)]
         public static void Stamp() => Stub("GSSTAMP", "Штамп.");

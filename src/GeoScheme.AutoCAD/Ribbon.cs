@@ -1,22 +1,20 @@
 using System;
+using System.IO;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using Autodesk.AutoCAD.ApplicationServices.Core;
 using Autodesk.Windows;
 
 namespace GeoScheme.AutoCAD
 {
-    /// <summary>
-    /// Сборка вкладки «ГЕО Схемы» в ленте AutoCAD.
-    /// </summary>
+    /// <summary>Сборка вкладки «ГЕО Схемы» в ленте AutoCAD.</summary>
     internal static class RibbonBuilder
     {
         public static void EnsureTab()
         {
             var ribbon = ComponentManager.Ribbon;
-            if (ribbon == null)
-                return;
 
-            if (ribbon.FindTab(Plugin.TabId) != null)
+            if (ribbon == null || ribbon.FindTab(Plugin.TabId) != null)
                 return;
 
             var tab = new RibbonTab
@@ -27,53 +25,143 @@ namespace GeoScheme.AutoCAD
             };
 
             tab.Panels.Add(MakePanel("Импорт",
-                Button("Импорт PDF", "GSPALETTE", "Палитра листов: выбрать и вставить в чертёж"),
-                Button("Калибровка", "GSCALIBR", "Масштаб по известному размеру"),
-                Button("Выделить подложку", "GSSELBASE", "Выделить весь импортированный лист")));
+                Big("Импорт PDF", "GSPALETTE", "Палитра листов PDF", "import"),
+                Big("Калибровка", "GSCALIBR", "Масштаб по известному размеру", "calib")));
 
             tab.Panels.Add(MakePanel("Схема",
-                Button("Объекты", "GSOBJECT", "Обвести и выделить объекты схемы"),
-                Button("Оси", "GSAXIS", "Ось по обрывкам линий и маркеру"),
-                Button("Размеры", "GSDIM", "Проектные размеры по объекту")));
+                Big("Объекты", "GSOBJECT", "Выделить объекты схемы", "object"),
+                Big("Оси", "GSAXIS", "Ось по обрывкам и маркеру", "axis"),
+                Big("Размеры", "GSDIM", "Размеры: вручную или автоматически", "dims"),
+                Big("Всё без подложки", "GSSELALL", "Выделить всё, кроме подложки", "select")));
 
             tab.Panels.Add(MakePanel("Отклонения",
-                Button("Выбрать тип отклонений", "GSFACT", "Фактические размеры, высотные отклонения, отклонения В/Н")));
+                Big("Выбрать тип отклонений", "GSFACT", "Фактические размеры, высотные, В/Н, анкера", "fact")));
 
             tab.Panels.Add(MakePanel("Оформление",
-                Button("Рамка", "GSFRAME", "Вставить рамку из библиотеки"),
-                Button("Текстовые блоки", "GSTEXT", "Библиотека текстовых блоков"),
-                Button("Блоки", "GSBLOCKS", "Библиотека DXF-блоков: легенды, условные обозначения"),
-                Button("Подгон шрифта", "GSFITTEXT", "Подогнать высоту текста под штамп рамки")));
+                Big("Рамка", "GSFRAME", "Вставить рамку из библиотеки", "frame"),
+                Big("Блоки", "GSBLOCKS", "Библиотека DXF-блоков", "blocks"),
+                Big("Подгон шрифта", "GSFITTEXT", "Подогнать высоту текста под штамп", "fontfit")));
+
+            tab.Panels.Add(MakePanel("Рисование",
+                Small("Отрезок", "_.LINE ", "line"),
+                Small("Полилиния", "_.PLINE ", "pline"),
+                Small("Круг", "_.CIRCLE ", "circle"),
+                Small("Прямоугольник", "_.RECTANG ", "rect"),
+                Small("Штриховка", "_.HATCH ", "hatch"),
+                TextSplit("text", "mtext")));
+
+            tab.Panels.Add(MakePanel("Редактирование",
+                Small("Переместить", "_.MOVE ", "move"),
+                Small("Копировать", "_.COPY ", "copy"),
+                Small("Повернуть", "_.ROTATE ", "rotate"),
+                Small("Отразить", "_.MIRROR ", "mirror"),
+                Small("Расчленить", "_.EXPLODE ", "explode"),
+                Small("Сместить", "_.OFFSET ", "offset"),
+                Small("Соединить", "_.JOIN ", "join"),
+                Small("Копирование свойств", "_.MATCHPROP ", "matchprop")));
 
             tab.Panels.Add(MakePanel("Вывод",
-                Button("PDF", "GSPDF", "Экспорт листа в PDF")));
+                Big("PDF", "GSPDF", "Экспорт листа в PDF", "import")));
 
             ribbon.Tabs.Add(tab);
         }
 
-        private static RibbonPanel MakePanel(string title, params RibbonButton[] buttons)
+        private static RibbonPanel MakePanel(string title, params RibbonItem[] items)
         {
             var source = new RibbonPanelSource { Title = title };
-            foreach (var b in buttons)
-                source.Items.Add(b);
+
+            foreach (var item in items)
+                source.Items.Add(item);
 
             return new RibbonPanel { Source = source };
         }
 
-        private static RibbonButton Button(string text, string command, string tooltip)
+        private static RibbonButton Big(string text, string command, string tooltip, string icon)
         {
+            var image = LoadIcon(icon, false);
+
             return new RibbonButton
             {
                 Text = text,
                 Name = text,
                 ShowText = true,
-                ShowImage = false,
+                ShowImage = image != null,
                 Size = RibbonItemSize.Large,
                 Orientation = System.Windows.Controls.Orientation.Vertical,
                 ToolTip = tooltip,
+                Image = image,
+                LargeImage = image,
                 CommandHandler = new SendCommandHandler(command),
                 CommandParameter = command
             };
+        }
+
+        private static RibbonButton Small(string text, string command, string icon)
+        {
+            var image = LoadIcon(icon, true);
+
+            return new RibbonButton
+            {
+                Text = text,
+                Name = text,
+                ShowText = false,
+                ShowImage = image != null,
+                Size = RibbonItemSize.Standard,
+                ToolTip = text,
+                Image = image,
+                CommandHandler = new SendCommandHandler(command),
+                CommandParameter = command
+            };
+        }
+
+        private static RibbonItem TextSplit(string textIcon, string mtextIcon)
+        {
+            var split = new RibbonSplitButton
+            {
+                Text = "Текст",
+                Name = "Текст",
+                ShowText = false,
+                ShowImage = true,
+                Size = RibbonItemSize.Standard,
+                IsSplit = true,
+                ToolTip = "Текст: однострочный или многострочный",
+                Image = LoadIcon(textIcon, true),
+                CommandHandler = new SendCommandHandler("_.TEXT "),
+                CommandParameter = "_.TEXT "
+            };
+
+            split.Items.Add(Small("Однострочный текст", "_.TEXT ", textIcon));
+            split.Items.Add(Small("Многострочный текст", "_.MTEXT ", mtextIcon));
+
+            return split;
+        }
+
+        private static System.Windows.Media.ImageSource LoadIcon(string name, bool small)
+        {
+            try
+            {
+                var folder = Path.Combine(
+                    Path.GetDirectoryName(typeof(RibbonBuilder).Assembly.Location) ?? string.Empty,
+                    "Icons");
+
+                var path = Path.Combine(folder, name + (small ? "_16.png" : "_32.png"));
+
+                if (!File.Exists(path))
+                    return null;
+
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(path);
+                bitmap.EndInit();
+                bitmap.Freeze();
+
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private sealed class SendCommandHandler : ICommand
@@ -96,7 +184,12 @@ namespace GeoScheme.AutoCAD
             public void Execute(object parameter)
             {
                 var doc = Application.DocumentManager?.MdiActiveDocument;
-                doc?.SendStringToExecute(_command + " ", true, false, false);
+
+                if (doc == null)
+                    return;
+
+                var command = _command.EndsWith(" ") ? _command : _command + " ";
+                doc.SendStringToExecute(command, true, false, false);
             }
         }
     }
