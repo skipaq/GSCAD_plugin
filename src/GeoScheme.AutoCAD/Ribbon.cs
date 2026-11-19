@@ -287,6 +287,11 @@ namespace GeoScheme.AutoCAD
                     return;
 
                 var command = _command.EndsWith(" ") ? _command : _command + " ";
+
+                // Для выделения подложки запоминаем выделение до запуска команды.
+                if (command.IndexOf("GSSELBASE", StringComparison.OrdinalIgnoreCase) >= 0)
+                    Commands.CaptureSelection(doc.Editor);
+
                 doc.SendStringToExecute(command, true, false, false);
             }
         }

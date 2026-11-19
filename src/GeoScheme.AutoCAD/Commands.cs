@@ -262,6 +262,27 @@ namespace GeoScheme.AutoCAD
             }
         }
 
+        /// <summary>Выделение, снятое в момент клика по кнопке (до запуска команды).</summary>
+        internal static readonly System.Collections.Generic.List<ObjectId> PendingSelection =
+            new System.Collections.Generic.List<ObjectId>();
+
+        internal static void CaptureSelection(Editor ed)
+        {
+            PendingSelection.Clear();
+
+            try
+            {
+                var implied = ed.SelectImplied();
+
+                if (implied.Status == PromptStatus.OK && implied.Value != null)
+                    PendingSelection.AddRange(implied.Value.GetObjectIds());
+            }
+            catch
+            {
+                // выделения нет
+            }
+        }
+
         [CommandMethod("GSSELBASE", CommandFlags.Modal)]
         public static void SelectUnderlay()
         {
@@ -274,26 +295,32 @@ namespace GeoScheme.AutoCAD
                 var ed = doc.Editor;
                 var db = doc.Database;
 
-                var implied = ed.SelectImplied();
                 var source = new System.Collections.Generic.List<ObjectId>();
 
-                using (var tr = db.TransactionManager.StartTransaction())
+                // Выделение, снятое при клике по кнопке, либо текущее pickfirst.
+                if (PendingSelection.Count > 0)
                 {
-                    if (implied.Status == PromptStatus.OK && implied.Value != null)
-                    {
-                        // Уже что-то выделено — берём подложку только из этого.
-                        foreach (var id in implied.Value.GetObjectIds())
-                            source.Add(id);
-                    }
-                    else
+                    source.AddRange(PendingSelection);
+                }
+                else
+                {
+                    CaptureSelection(ed);
+                    source.AddRange(PendingSelection);
+                }
+
+                PendingSelection.Clear();
+
+                if (source.Count == 0)
+                {
+                    using (var tr = db.TransactionManager.StartTransaction())
                     {
                         var msp = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
 
                         foreach (var id in msp)
                             source.Add(id);
-                    }
 
-                    tr.Commit();
+                        tr.Commit();
+                    }
                 }
 
                 var underlay = new System.Collections.Generic.List<ObjectId>();
