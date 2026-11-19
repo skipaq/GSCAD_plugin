@@ -11,9 +11,11 @@ namespace GeoScheme.AutoCAD
     /// <summary>Вставка DXF-блока: масштаб под ближайший текст, блок едет за курсором.</summary>
     public static class BlockService
     {
-        public static void Insert(Editor ed, Database db, FrameLibrary.FrameInfo block)
+        public static void Insert(Editor ed, Database db, FrameLibrary.FrameInfo block, double stampHeight)
         {
-            var defaultHeight = DimensionService.AxisTextHeight(db);
+            // Приоритет — высота текста штампа, иначе подписи осей.
+            var defaultHeight = stampHeight > 0 ? stampHeight : DimensionService.AxisTextHeight(db);
+
             var previewScale = block.TextHeight > 0 && defaultHeight > 0
                 ? defaultHeight / block.TextHeight
                 : 1.0;
@@ -71,7 +73,9 @@ namespace GeoScheme.AutoCAD
                     return;
 
                 var point = jig.Position;
-                var target = NearestTextHeight(db, point);
+
+                // Если штамп задан — держим его высоту, иначе подбираем по ближайшему тексту.
+                var target = stampHeight > 0 ? stampHeight : NearestTextHeight(db, point);
 
                 if (target <= 0)
                     target = defaultHeight;

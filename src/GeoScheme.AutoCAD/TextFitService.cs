@@ -251,7 +251,7 @@ namespace GeoScheme.AutoCAD
         }
 
         /// <summary>Высота текста из выбранного объекта: блок, текст или размер.</summary>
-        private static double SourceTextHeight(Database db, ObjectId id)
+        public static double SourceTextHeight(Database db, ObjectId id)
         {
             using (var tr = db.TransactionManager.StartTransaction())
             {

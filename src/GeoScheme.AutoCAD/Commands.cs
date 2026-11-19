@@ -562,6 +562,38 @@ namespace GeoScheme.AutoCAD
             }
         }
 
+        private static string _stampDocument;
+        private static double _stampHeight;
+        private static bool _stampAsked;
+
+        /// <summary>Высота текста штампа для блоков: спрашиваем один раз на чертёж.</summary>
+        private static double EnsureStampHeight(Autodesk.AutoCAD.ApplicationServices.Document doc)
+        {
+            if (string.Equals(_stampDocument, doc.Name, StringComparison.OrdinalIgnoreCase) && _stampAsked)
+                return _stampHeight;
+
+            var options = new PromptEntityOptions(
+                "\nУкажите рамку, текст или размер со штампом (Enter — подбирать по ближайшему тексту): ");
+            options.SetRejectMessage("\nНужен блок, текст или размер.");
+            options.AddAllowedClass(typeof(BlockReference), false);
+            options.AddAllowedClass(typeof(DBText), false);
+            options.AddAllowedClass(typeof(MText), false);
+            options.AddAllowedClass(typeof(Dimension), false);
+
+            var pick = doc.Editor.GetEntity(options);
+
+            _stampDocument = doc.Name;
+            _stampAsked = true;
+            _stampHeight = pick.Status == PromptStatus.OK
+                ? TextFitService.SourceTextHeight(doc.Database, pick.ObjectId)
+                : 0;
+
+            if (_stampHeight > 0)
+                doc.Editor.WriteMessage("\nВысота штампа: {0:F3}", _stampHeight);
+
+            return _stampHeight;
+        }
+
         [CommandMethod("GSBLOCKS", CommandFlags.Modal)]
         public static void Blocks()
         {
@@ -598,7 +630,8 @@ namespace GeoScheme.AutoCAD
                         continue;
                     }
 
-                    BlockService.Insert(doc.Editor, doc.Database, choice.Block);
+                    var stampHeight = EnsureStampHeight(doc);
+                    BlockService.Insert(doc.Editor, doc.Database, choice.Block, stampHeight);
                     return;
                 }
             }
