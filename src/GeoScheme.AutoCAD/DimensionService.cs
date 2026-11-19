@@ -375,11 +375,72 @@ namespace GeoScheme.AutoCAD
 
         private static void PlaceLevels(List<Request> requests, double offset, double height)
         {
-            // Все размеры ставим на одну линию. Если текст не помещается между
-            // выносными линиями, AutoCAD сам выносит его наружу — так выглядит
-            // штатный размер, без наших дорисованных линий и сдвигов.
-            foreach (var request in requests)
-                request.Level = 0;
+            // Раскладываем размеры по уровням: сторона уезжает дальше от объекта,
+            // только если её текст налез на текст другой стороны. Внутри одной
+            // стороны тексты не разводим — они и так на одной линии.
+            var groups = SplitSides(requests);
+
+            if (groups.Count == 0)
+                return;
+
+            var levels = new int[groups.Count];
+
+            for (var pass = 0; pass < 12; pass++)
+            {
+                var boxes = new List<List<Box>>();
+
+                for (var i = 0; i < groups.Count; i++)
+                {
+                    foreach (var request in groups[i])
+                        request.Level = levels[i];
+
+                    boxes.Add(groups[i].Select(r => TextBox(r, offset, height)).ToList());
+                }
+
+                var moved = false;
+
+                for (var i = 0; i < groups.Count; i++)
+                {
+                    if (levels[i] >= 6)
+                        continue;
+
+                    var clash = false;
+
+                    for (var j = 0; j < groups.Count && !clash; j++)
+                    {
+                        if (i == j)
+                            continue;
+
+                        foreach (var a in boxes[i])
+                        {
+                            if (clash)
+                                break;
+
+                            foreach (var b in boxes[j])
+                            {
+                                if (!a.Intersects(b))
+                                    continue;
+
+                                clash = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!clash)
+                        continue;
+
+                    levels[i]++;
+                    moved = true;
+                }
+
+                if (!moved)
+                    break;
+            }
+
+            for (var i = 0; i < groups.Count; i++)
+                foreach (var request in groups[i])
+                    request.Level = levels[i];
         }
 
         private static List<List<Request>> SplitSides(List<Request> requests)
