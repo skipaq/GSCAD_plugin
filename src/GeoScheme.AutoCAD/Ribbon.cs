@@ -98,7 +98,10 @@ namespace GeoScheme.AutoCAD
 
         private static RibbonButton Small(string text, string command, string icon)
         {
-            var image = LoadIcon(icon, true);
+            // Сначала пробуем взять родную иконку AutoCAD из его ленты.
+            var builtIn = FindBuiltInImage(command);
+
+            var image = builtIn ?? LoadIcon(icon, true);
 
             return new RibbonButton
             {
@@ -134,6 +137,74 @@ namespace GeoScheme.AutoCAD
             split.Items.Add(Small("Многострочный текст", "_.MTEXT ", mtextIcon));
 
             return split;
+        }
+
+        /// <summary>Ищет иконку стандартной команды в родной ленте AutoCAD.</summary>
+        private static System.Windows.Media.ImageSource FindBuiltInImage(string command)
+        {
+            try
+            {
+                var id = command.Replace("_.", string.Empty).Trim().ToUpperInvariant();
+                id = "ID_" + id.Split(' ')[0];
+
+                var ribbon = ComponentManager.Ribbon;
+                if (ribbon == null)
+                    return null;
+
+                foreach (var tab in ribbon.Tabs)
+                {
+                    if (tab.Id == Plugin.TabId)
+                        continue;
+
+                    foreach (var panel in tab.Panels)
+                    {
+                        var source = panel.Source;
+                        if (source == null)
+                            continue;
+
+                        foreach (var item in source.Items)
+                        {
+                            var found = FindInItem(item, id, true);
+                            if (found != null)
+                                return found;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // лента ещё не построена — берём свою иконку
+            }
+
+            return null;
+        }
+
+        private static System.Windows.Media.ImageSource FindInItem(RibbonItem item, string id, bool large)
+        {
+            var button = item as RibbonButton;
+
+            if (button == null)
+                return null;
+
+            if (string.Equals(button.Id, id, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(button.Name, id, StringComparison.OrdinalIgnoreCase))
+            {
+                return large
+                    ? (System.Windows.Media.ImageSource)(button.LargeImage ?? button.Image)
+                    : (button.Image ?? button.LargeImage);
+            }
+
+            if (item is RibbonSplitButton split && split.Items != null)
+            {
+                foreach (var child in split.Items)
+                {
+                    var found = FindInItem(child, id, large);
+                    if (found != null)
+                        return found;
+                }
+            }
+
+            return null;
         }
 
         private static System.Windows.Media.ImageSource LoadIcon(string name, bool small)

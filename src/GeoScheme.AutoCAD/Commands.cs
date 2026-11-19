@@ -187,21 +187,27 @@ namespace GeoScheme.AutoCAD
                 using (var tr = doc.Database.TransactionManager.StartTransaction())
                 {
                     var layerId = Layers.Ensure(doc.Database, tr, Layers.Objects, Layers.ObjectsColor, true);
+                    var space = (BlockTableRecord)tr.GetObject(doc.Database.CurrentSpaceId, OpenMode.ForWrite);
                     var count = 0;
 
                     foreach (var id in sel.Value.GetObjectIds())
                     {
-                        var ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
-                        if (ent == null)
+                        var source = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (source == null)
                             continue;
 
-                        ent.LayerId = layerId;
-                        ent.ColorIndex = 256; // поСлою
+                        // Копируем на слой объектов, исходник остаётся на подложке.
+                        var copy = (Entity)source.Clone();
+                        copy.LayerId = layerId;
+                        copy.ColorIndex = 256; // поСлою
+
+                        space.AppendEntity(copy);
+                        tr.AddNewlyCreatedDBObject(copy, true);
                         count++;
                     }
 
                     tr.Commit();
-                    ed.WriteMessage("\nПеренесено на слой {0}: {1} объектов.", Layers.Objects, count);
+                    ed.WriteMessage("\nСкопировано на слой {0}: {1} объектов.", Layers.Objects, count);
                 }
             }
             catch (System.Exception ex)
@@ -265,63 +271,47 @@ namespace GeoScheme.AutoCAD
 
             try
             {
+                var ed = doc.Editor;
                 var db = doc.Database;
-                var ids = new System.Collections.Generic.List<ObjectId>();
+
+                var implied = ed.SelectImplied();
+                var source = new System.Collections.Generic.List<ObjectId>();
 
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
-                    var msp = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
+                    if (implied.Status == PromptStatus.OK && implied.Value != null)
+                    {
+                        // Уже что-то выделено — берём подложку только из этого.
+                        foreach (var id in implied.Value.GetObjectIds())
+                            source.Add(id);
+                    }
+                    else
+                    {
+                        var msp = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
 
-                    foreach (var id in msp)
+                        foreach (var id in msp)
+                            source.Add(id);
+                    }
+
+                    tr.Commit();
+                }
+
+                var underlay = new System.Collections.Generic.List<ObjectId>();
+
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    foreach (var id in source)
                     {
                         var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
                         if (ent != null && ent.Layer == Layers.Underlay)
-                            ids.Add(id);
+                            underlay.Add(id);
                     }
 
                     tr.Commit();
                 }
 
-                doc.Editor.SetImpliedSelection(ids.ToArray());
-                doc.Editor.WriteMessage("\nВыделено объектов подложки: {0}.", ids.Count);
-            }
-            catch (System.Exception ex)
-            {
-                Report(ex);
-            }
-        }
-
-        [CommandMethod("GSSELALL", CommandFlags.Modal)]
-        public static void SelectAllButUnderlay()
-        {
-            var doc = Application.DocumentManager.MdiActiveDocument;
-            if (doc == null)
-                return;
-
-            try
-            {
-                var db = doc.Database;
-                var ids = new System.Collections.Generic.List<ObjectId>();
-
-                using (var tr = db.TransactionManager.StartTransaction())
-                {
-                    var msp = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
-
-                    foreach (var id in msp)
-                    {
-                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                        if (ent == null)
-                            continue;
-
-                        if (ent.Layer != Layers.Underlay)
-                            ids.Add(id);
-                    }
-
-                    tr.Commit();
-                }
-
-                doc.Editor.SetImpliedSelection(ids.ToArray());
-                doc.Editor.WriteMessage("\nВыбрано объектов: {0}. Подложка пропущена.", ids.Count);
+                ed.SetImpliedSelection(underlay.ToArray());
+                ed.WriteMessage("\nВыделено объектов подложки: {0}.", underlay.Count);
             }
             catch (System.Exception ex)
             {
