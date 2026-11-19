@@ -85,6 +85,9 @@ namespace GeoScheme.AutoCAD
                 using (doc.LockDocument())
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
+                    var circles = ReadCircles(db, tr);
+                    var usedCircles = new System.Collections.Generic.HashSet<ObjectId>();
+
                     foreach (var target in targets)
                     {
                         var value = height ?? target.Original;
@@ -94,19 +97,34 @@ namespace GeoScheme.AutoCAD
                             case Kind.Text:
                                 var text = tr.GetObject(target.Id, OpenMode.ForWrite) as DBText;
                                 if (text != null)
+                                {
+                                    var point = text.Justify != AttachmentPoint.BaseLeft
+                                        ? text.AlignmentPoint
+                                        : text.Position;
+
                                     text.Height = value;
+                                    ScaleCircle(tr, circles, usedCircles, point, target.Original, value);
+                                }
                                 break;
 
                             case Kind.MText:
                                 var mtext = tr.GetObject(target.Id, OpenMode.ForWrite) as MText;
                                 if (mtext != null)
+                                {
+                                    var point = mtext.Location;
                                     mtext.TextHeight = value;
+                                    ScaleCircle(tr, circles, usedCircles, point, target.Original, value);
+                                }
                                 break;
 
                             case Kind.Attribute:
                                 var attribute = tr.GetObject(target.Id, OpenMode.ForWrite) as AttributeReference;
                                 if (attribute != null)
+                                {
                                     attribute.Height = value;
+                                    ScaleCircle(tr, circles, usedCircles, attribute.Position,
+                                        target.Original, value);
+                                }
                                 break;
 
                             case Kind.Dimension:
@@ -125,6 +143,58 @@ namespace GeoScheme.AutoCAD
             catch (System.Exception ex)
             {
                 doc.Editor.WriteMessage("\nНе удалось применить: {0}", ex.Message);
+            }
+        }
+
+        /// <summary>Все окружности текущего пространства: вокруг них могут быть подписи.</summary>
+        private static List<(ObjectId Id, Point3d Center, double Radius)> ReadCircles(Database db, Transaction tr)
+        {
+            var result = new List<(ObjectId, Point3d, double)>();
+            var space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
+
+            foreach (var id in space)
+            {
+                var circle = tr.GetObject(id, OpenMode.ForRead) as Circle;
+                if (circle != null)
+                    result.Add((id, circle.Center, circle.Radius));
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Масштабирует кружок вместе с текстом: кружок, в который попадает подпись
+        /// (осевая, отклонение), растёт/уменьшается во столько же раз.
+        /// </summary>
+        private static void ScaleCircle(Transaction tr,
+            List<(ObjectId Id, Point3d Center, double Radius)> circles,
+            System.Collections.Generic.HashSet<ObjectId> used,
+            Point3d point, double oldHeight, double newHeight)
+        {
+            if (oldHeight <= 0 || newHeight <= 0)
+                return;
+
+            if (Math.Abs(newHeight - oldHeight) < 1e-9)
+                return;
+
+            foreach (var item in circles)
+            {
+                if (used.Contains(item.Id))
+                    continue;
+
+                if (item.Center.DistanceTo(point) > item.Radius * 1.3)
+                    continue;
+
+                if (item.Radius < oldHeight * 0.3 || item.Radius > oldHeight * 5)
+                    continue;
+
+                var circle = tr.GetObject(item.Id, OpenMode.ForWrite) as Circle;
+                if (circle == null)
+                    continue;
+
+                circle.Radius = item.Radius * (newHeight / oldHeight);
+                used.Add(item.Id);
+                return;
             }
         }
 
