@@ -562,16 +562,9 @@ namespace GeoScheme.AutoCAD
             }
         }
 
-        private static string _stampDocument;
-        private static double _stampHeight;
-        private static bool _stampAsked;
-
-        /// <summary>Высота текста штампа для блоков: спрашиваем один раз на чертёж.</summary>
-        private static double EnsureStampHeight(Autodesk.AutoCAD.ApplicationServices.Document doc)
+        /// <summary>Высота текста штампа для блоков: спрашиваем каждый раз.</summary>
+        private static double AskStampHeight(Autodesk.AutoCAD.ApplicationServices.Document doc)
         {
-            if (string.Equals(_stampDocument, doc.Name, StringComparison.OrdinalIgnoreCase) && _stampAsked)
-                return _stampHeight;
-
             var options = new PromptEntityOptions(
                 "\nУкажите рамку, текст или размер со штампом (Enter — подбирать по ближайшему тексту): ");
             options.SetRejectMessage("\nНужен блок, текст или размер.");
@@ -582,16 +575,14 @@ namespace GeoScheme.AutoCAD
 
             var pick = doc.Editor.GetEntity(options);
 
-            _stampDocument = doc.Name;
-            _stampAsked = true;
-            _stampHeight = pick.Status == PromptStatus.OK
+            var height = pick.Status == PromptStatus.OK
                 ? TextFitService.SourceTextHeight(doc.Database, pick.ObjectId)
                 : 0;
 
-            if (_stampHeight > 0)
-                doc.Editor.WriteMessage("\nВысота штампа: {0:F3}", _stampHeight);
+            if (height > 0)
+                doc.Editor.WriteMessage("\nВысота штампа: {0:F3}", height);
 
-            return _stampHeight;
+            return height;
         }
 
         [CommandMethod("GSBLOCKS", CommandFlags.Modal)]
@@ -630,7 +621,7 @@ namespace GeoScheme.AutoCAD
                         continue;
                     }
 
-                    var stampHeight = EnsureStampHeight(doc);
+                    var stampHeight = AskStampHeight(doc);
                     BlockService.Insert(doc.Editor, doc.Database, choice.Block, stampHeight);
                     return;
                 }
