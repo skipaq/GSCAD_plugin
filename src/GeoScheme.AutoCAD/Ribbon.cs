@@ -14,8 +14,28 @@ namespace GeoScheme.AutoCAD
         {
             var ribbon = ComponentManager.Ribbon;
 
-            if (ribbon == null || ribbon.FindTab(Plugin.TabId) != null)
+            if (ribbon == null)
                 return;
+
+            // Вкладка могла остаться от прошлой сессии (AutoCAD кэширует ленту),
+            // поэтому удаляем старую и строим заново — иначе кнопки остаются старыми.
+            // Убираем все наши вкладки, оставшиеся от прошлых сессий.
+            for (var i = ribbon.Tabs.Count - 1; i >= 0; i--)
+            {
+                var tabId = ribbon.Tabs[i].Id;
+
+                if (tabId != null && tabId.StartsWith("GEOSCHEME", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        ribbon.Tabs.RemoveAt(i);
+                    }
+                    catch
+                    {
+                        // не смогли убрать — оставим как есть
+                    }
+                }
+            }
 
             var tab = new RibbonTab
             {
@@ -46,6 +66,7 @@ namespace GeoScheme.AutoCAD
                 Small("Отрезок", "_.LINE ", "line"),
                 Small("Полилиния", "_.PLINE ", "pline"),
                 Small("Круг", "_.CIRCLE ", "circle"),
+                RowBreak(),
                 Small("Прямоугольник", "_.RECTANG ", "rect"),
                 Small("Штриховка", "_.HATCH ", "hatch"),
                 TextSplit("text", "mtext")));
@@ -55,6 +76,7 @@ namespace GeoScheme.AutoCAD
                 Small("Копировать", "_.COPY ", "copy"),
                 Small("Повернуть", "_.ROTATE ", "rotate"),
                 Small("Отразить", "_.MIRROR ", "mirror"),
+                RowBreak(),
                 Small("Расчленить", "_.EXPLODE ", "explode"),
                 Small("Сместить", "_.OFFSET ", "offset"),
                 Small("Соединить", "_.JOIN ", "join"),
@@ -74,6 +96,11 @@ namespace GeoScheme.AutoCAD
                 source.Items.Add(item);
 
             return new RibbonPanel { Source = source };
+        }
+
+        private static RibbonItem RowBreak()
+        {
+            return new RibbonRowBreak();
         }
 
         private static RibbonButton Big(string text, string command, string tooltip, string icon)
