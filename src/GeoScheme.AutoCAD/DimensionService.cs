@@ -375,72 +375,49 @@ namespace GeoScheme.AutoCAD
 
         private static void PlaceLevels(List<Request> requests, double offset, double height)
         {
-            // Раскладываем размеры по уровням: сторона уезжает дальше от объекта,
-            // только если её текст налез на текст другой стороны. Внутри одной
-            // стороны тексты не разводим — они и так на одной линии.
-            var groups = SplitSides(requests);
+            // Базовый вариант: все размеры на одной линии.
+            // Разводим только те, чьи тексты реально налезли друг на друга,
+            // и сдвигаем по одному размеру, а не всю сторону.
+            foreach (var request in requests)
+                request.Level = 0;
 
-            if (groups.Count == 0)
-                return;
-
-            var levels = new int[groups.Count];
-
-            for (var pass = 0; pass < 12; pass++)
+            for (var pass = 0; pass < 8; pass++)
             {
-                var boxes = new List<List<Box>>();
-
-                for (var i = 0; i < groups.Count; i++)
-                {
-                    foreach (var request in groups[i])
-                        request.Level = levels[i];
-
-                    boxes.Add(groups[i].Select(r => TextBox(r, offset, height)).ToList());
-                }
-
                 var moved = false;
 
-                for (var i = 0; i < groups.Count; i++)
+                for (var i = 0; i < requests.Count; i++)
                 {
-                    if (levels[i] >= 6)
-                        continue;
-
-                    var clash = false;
-
-                    for (var j = 0; j < groups.Count && !clash; j++)
+                    for (var j = i + 1; j < requests.Count; j++)
                     {
-                        if (i == j)
+                        var a = requests[i];
+                        var b = requests[j];
+
+                        if (a.Level != b.Level)
                             continue;
 
-                        foreach (var a in boxes[i])
-                        {
-                            if (clash)
-                                break;
+                        // Размеры одной ориентации стоят на одной линии — их не трогаем,
+                        // иначе начинают уезжать в сторону. Разводим только
+                        // горизонтальные против вертикальных.
+                        if (a.Vertical == b.Vertical)
+                            continue;
 
-                            foreach (var b in boxes[j])
-                            {
-                                if (!a.Intersects(b))
-                                    continue;
+                        if (!TextBox(a, offset, height).Intersects(TextBox(b, offset, height)))
+                            continue;
 
-                                clash = true;
-                                break;
-                            }
-                        }
+                        // Наружу уходит более короткий размер — он обычно и мешает.
+                        var shortOne = (a.SpanMax - a.SpanMin) <= (b.SpanMax - b.SpanMin) ? a : b;
+
+                        if (shortOne.Level >= 3)
+                            continue;
+
+                        shortOne.Level++;
+                        moved = true;
                     }
-
-                    if (!clash)
-                        continue;
-
-                    levels[i]++;
-                    moved = true;
                 }
 
                 if (!moved)
                     break;
             }
-
-            for (var i = 0; i < groups.Count; i++)
-                foreach (var request in groups[i])
-                    request.Level = levels[i];
         }
 
         private static List<List<Request>> SplitSides(List<Request> requests)
