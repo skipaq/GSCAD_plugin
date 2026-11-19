@@ -95,6 +95,7 @@ namespace GeoScheme.AutoCAD
             var choice = OffsetDialog.Ask(
                 height * 2.5 * mmPerUnit,
                 styles.Select(s => s.Name).ToList(),
+                styles.Select(s => s.TextHeight * mmPerUnit).ToList(),
                 ClosestStyleIndex(styles, height));
 
             if (!choice.Ok || choice.OffsetMm <= 0)
@@ -231,8 +232,6 @@ namespace GeoScheme.AutoCAD
 
                 tr.Commit();
             }
-
-            ApplyExternalText(db, created, offset, height);
 
             ed.WriteMessage("\nРазмеров проставлено: {0}.", created.Count);
 
@@ -376,37 +375,11 @@ namespace GeoScheme.AutoCAD
 
         private static void PlaceLevels(List<Request> requests, double offset, double height)
         {
-            var step = height * 2.5;
-            var placed = new List<Box>();
-
-            foreach (var group in SplitSides(requests))
-            {
-                // Сначала решаем, куда пойдёт текст: по центру или наружу.
-                foreach (var request in group)
-                {
-                    var span = request.SpanMax - request.SpanMin;
-                    request.TextOutside = span < request.TextWidth * 1.15;
-                    request.OutsideAtFar = request.LastOnSide;
-                }
-
-                var level = 0;
-
-                while (level < 20)
-                {
-                    foreach (var request in group)
-                        request.Level = level;
-
-                    var boxes = group.Select(r => TextBox(r, offset, height)).ToList();
-
-                    if (!boxes.Any(b => placed.Any(p => p.Intersects(b))))
-                    {
-                        placed.AddRange(boxes);
-                        break;
-                    }
-
-                    level++;
-                }
-            }
+            // Все размеры ставим на одну линию. Если текст не помещается между
+            // выносными линиями, AutoCAD сам выносит его наружу — так выглядит
+            // штатный размер, без наших дорисованных линий и сдвигов.
+            foreach (var request in requests)
+                request.Level = 0;
         }
 
         private static List<List<Request>> SplitSides(List<Request> requests)
@@ -431,23 +404,26 @@ namespace GeoScheme.AutoCAD
         private static Box TextBox(Request request, double offset, double height)
         {
             var line = DimLinePoint(request, offset, height);
-            var position = TextAnchor(request, line, height);
+            var middle = (request.SpanMin + request.SpanMax) / 2;
 
-            return request.Vertical
-                ? new Box
+            if (request.Vertical)
+            {
+                return new Box
                 {
-                    MinX = position.X - height,
-                    MaxX = position.X + height,
-                    MinY = position.Y - request.TextWidth / 2,
-                    MaxY = position.Y + request.TextWidth / 2
-                }
-                : new Box
-                {
-                    MinX = position.X - request.TextWidth / 2,
-                    MaxX = position.X + request.TextWidth / 2,
-                    MinY = position.Y - height,
-                    MaxY = position.Y + height
+                    MinX = line.X - height,
+                    MaxX = line.X + height,
+                    MinY = middle - request.TextWidth / 2,
+                    MaxY = middle + request.TextWidth / 2
                 };
+            }
+
+            return new Box
+            {
+                MinX = middle - request.TextWidth / 2,
+                MaxX = middle + request.TextWidth / 2,
+                MinY = line.Y - height,
+                MaxY = line.Y + height
+            };
         }
 
         private static Point3d TextAnchor(Request request, Point3d linePoint, double height)
@@ -492,91 +468,12 @@ namespace GeoScheme.AutoCAD
             }
         }
 
-        private static void ApplyExternalText(Database db,
-            List<(ObjectId Id, Request Request, Point3d LinePoint)> dimensions, double offset, double height)
-        {
-            var plans = new Dictionary<ObjectId, Point3d>();
-
-            foreach (var item in dimensions)
-            {
-                if (!item.Request.TextOutside)
-                    continue;
-
-                var line = DimLinePoint(item.Request, offset, height);
-                plans[item.Id] = TextAnchor(item.Request, line, height);
-            }
-
-            if (plans.Count == 0)
-                return;
-
-            using (var tr = db.TransactionManager.StartTransaction())
-            {
-                var layerId = Layers.Ensure(db, tr, Layers.Dimensions, Layers.DimensionsColor, true);
-                var space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
-
-                foreach (var item in dimensions)
-                {
-                    if (!item.Request.TextOutside)
-                        continue;
-
-                    var request = item.Request;
-                    var line = DimLinePoint(request, offset, height);
-                    var anchor = TextAnchor(request, line, height);
-
-                    var from = Point3d.Origin;
-                    var to = Point3d.Origin;
-
-                    if (!request.Vertical)
-                    {
-                        var endX = request.OutsideAtFar ? request.Far.X : request.Near.X;
-                        var dir = Math.Sign(anchor.X - endX);
-                        if (dir == 0)
-                            dir = 1;
-
-                        from = new Point3d(endX, line.Y, 0);
-                        to = new Point3d(anchor.X + dir * request.TextWidth / 2, line.Y, 0);
-                    }
-                    else
-                    {
-                        var endY = request.OutsideAtFar ? request.Far.Y : request.Near.Y;
-                        var dir = Math.Sign(anchor.Y - endY);
-                        if (dir == 0)
-                            dir = 1;
-
-                        from = new Point3d(line.X, endY, 0);
-                        to = new Point3d(line.X, anchor.Y + dir * request.TextWidth / 2, 0);
-                    }
-
-                    if (from.DistanceTo(to) < 1e-9)
-                        continue;
-
-                    var extension = new Line(from, to)
-                    {
-                        LayerId = layerId,
-                        Linetype = "ByLayer"
-                    };
-
-                    space.AppendEntity(extension);
-                    tr.AddNewlyCreatedDBObject(extension, true);
-
-                    var dimension = tr.GetObject(item.Id, OpenMode.ForWrite) as Dimension;
-                    if (dimension != null)
-                    {
-                        dimension.TextPosition = anchor;
-                        dimension.Dimtmove = 2;
-                    }
-                }
-
-                tr.Commit();
-            }
-        }
-
         // ------------------------------------------------------------------ оси
 
         private static bool IsAxis(Entity ent)
         {
             var line = ent as Line;
-            return line != null && (line.Layer == Layers.Axis || line.Layer == "оси");
+            return line != null && (IsAxisLayer(line.Layer));
         }
 
         private static AxisSet ReadAxes(Database db, List<ObjectId> ids)
@@ -748,7 +645,8 @@ namespace GeoScheme.AutoCAD
 
         public static double AxisTextHeight(Database db)
         {
-            double height = 0;
+            double axis = 0;
+            double any = 0;
 
             using (var tr = db.TransactionManager.StartTransaction())
             {
@@ -756,21 +654,56 @@ namespace GeoScheme.AutoCAD
 
                 foreach (var id in msp)
                 {
-                    var text = tr.GetObject(id, OpenMode.ForRead) as DBText;
-                    if (text == null || text.Layer != Layers.Axis)
+                    var entity = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (entity == null)
                         continue;
 
-                    if (text.Height > height)
-                        height = text.Height;
+                    double height;
+                    var axisLayer = false;
+
+                    switch (entity)
+                    {
+                        case DBText text:
+                            height = text.Height;
+                            axisLayer = IsAxisLayer(text.Layer);
+                            break;
+
+                        case MText mtext:
+                            height = mtext.TextHeight;
+                            axisLayer = IsAxisLayer(mtext.Layer);
+                            break;
+
+                        default:
+                            continue;
+                    }
+
+                    if (height <= 0)
+                        continue;
+
+                    if (axisLayer && height > axis)
+                        axis = height;
+
+                    if (height > any)
+                        any = height;
                 }
 
                 tr.Commit();
             }
 
-            if (height > 0)
-                return height;
+            // Подписи осей — приоритет, иначе самая крупная надпись чертежа.
+            if (axis > 0)
+                return axis;
+
+            if (any > 0)
+                return any;
 
             return DrawingSettings.GetUnits(db) == "mm" ? 150.0 : 0.15;
+        }
+
+        private static bool IsAxisLayer(string layer)
+        {
+            return string.Equals(layer, Layers.Axis, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(layer, "оси", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<DimStyleInfo> GetDimStyles(Database db)

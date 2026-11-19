@@ -15,7 +15,8 @@ namespace GeoScheme.AutoCAD
             public int StyleIndex;
         }
 
-        public static Result Ask(double defaultMm, IList<string> styleNames, int defaultStyleIndex)
+        public static Result Ask(double defaultMm, IList<string> styleNames,
+            IList<double> styleHeightsMm, int defaultStyleIndex)
         {
             var result = new Result();
 
@@ -83,6 +84,31 @@ namespace GeoScheme.AutoCAD
                     Height = 18,
                     ForeColor = Color.Gray,
                     Location = new Point(180, 91)
+                };
+
+                // При смене стиля отступ пересчитывается по его высоте текста.
+                var manual = false;
+
+                input.ValueChanged += (s, e) => manual = true;
+
+                styleBox.SelectedIndexChanged += (s, e) =>
+                {
+                    if (manual)
+                        return;
+
+                    if (styleHeightsMm == null || styleBox.SelectedIndex < 0 ||
+                        styleBox.SelectedIndex >= styleHeightsMm.Count)
+                        return;
+
+                    var styleHeight = styleHeightsMm[styleBox.SelectedIndex];
+                    if (styleHeight <= 0)
+                        return;
+
+                    var mm = Math.Round(styleHeight * 2.5);
+                    if (mm < 1)
+                        mm = 1;
+
+                    input.Value = (decimal)Math.Min((double)input.Maximum, mm);
                 };
 
                 var ok = new Button
